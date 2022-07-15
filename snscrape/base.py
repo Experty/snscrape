@@ -167,18 +167,14 @@ class Scraper:
 	def entity(self):
 		return self._get_entity()
 
-	def _request(self, method, url, params = None, data = None, headers = None, timeout = 10, responseOkCallback = None, allowRedirects = True, proxies = None):
-		proxies = proxies or self._proxies or {}
+	def _request(self, method, url, params = None, data = None, headers = None, timeout = 10, responseOkCallback = None):
 		for attempt in range(self._retries + 1):
 			# The request is newly prepared on each retry because of potential cookie updates.
 			req = self._client.build_request(method, url, params=params, data=data, headers=headers, timeout=timeout)
-			environmentSettings = self._session.merge_environment_settings(req.url, proxies, None, None, None)
 			logger.info(f'Retrieving {req.url}')
 			logger.debug(f'... with headers: {headers!r}')
 			if data:
 				logger.debug(f'... with data: {data!r}')
-			if environmentSettings:
-				logger.debug(f'... with environmentSettings: {environmentSettings!r}')
 			try:
 				r = self._client.send(req)
 			except httpx.RequestError as exc:
