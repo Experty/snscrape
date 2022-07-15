@@ -5,7 +5,7 @@ import datetime
 import functools
 import json
 import logging
-import requests
+import httpx
 import time
 import warnings
 
@@ -139,10 +139,15 @@ class Scraper:
 
 	name = None
 
-	def __init__(self, *, retries = 3, proxies = None):
-		self._retries = retries
-		self._proxies = proxies
-		self._session = requests.Session()
+	def __init__(self, *, retries = 3, proxy=''):
+		if not proxy:
+			self._retries = retries
+			self._client = httpx.Client(http2=True, verify=True)
+		else:
+			proxies = {'http://': f'http://{proxy}',
+					   'https://': f'http://{proxy}'}
+			self._client = httpx.Client(http2=True, proxies=proxies, verify=True)
+
 
 	@abc.abstractmethod
 	def get_items(self):
@@ -166,7 +171,7 @@ class Scraper:
 		proxies = proxies or self._proxies or {}
 		for attempt in range(self._retries + 1):
 			# The request is newly prepared on each retry because of potential cookie updates.
-			req = self._session.prepare_request(requests.Request(method, url, params = params, data = data, headers = headers))
+			req = self._client.build_request(method, url, params=params, data=data, headers=headers, timeout=timeout)
 			environmentSettings = self._session.merge_environment_settings(req.url, proxies, None, None, None)
 			logger.info(f'Retrieving {req.url}')
 			logger.debug(f'... with headers: {headers!r}')
@@ -175,7 +180,7 @@ class Scraper:
 			if environmentSettings:
 				logger.debug(f'... with environmentSettings: {environmentSettings!r}')
 			try:
-				r = self._session.send(req, allow_redirects = allowRedirects, timeout = timeout, **environmentSettings)
+				r = self._client.send(req)
 			except requests.exceptions.RequestException as exc:
 				if attempt < self._retries:
 					retrying = ', retrying'
@@ -236,7 +241,7 @@ class Scraper:
 		return cls(*args, **kwargs, retries = argparseArgs.retries)
 
 
-def nonempty_string(name):
+def nonempty_string(name):	
 	def f(s):
 		s = s.strip()
 		if s:
