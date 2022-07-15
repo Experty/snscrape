@@ -8,6 +8,7 @@ import logging
 import requests
 import time
 import warnings
+import inspect
 
 
 logger = logging.getLogger(__name__)
@@ -142,7 +143,8 @@ class Scraper:
 	def __init__(self, *, retries = 3, proxies = None):
 		self._retries = retries
 		self._proxies = proxies
-		self._session = requests.Session()
+		self._client = httpx.Client(http2=True, verify=True)
+		self._async_client = httpx.AsyncClient(http2=True, verify=True)
 
 	@abc.abstractmethod
 	def get_items(self):
@@ -162,20 +164,20 @@ class Scraper:
 	def entity(self):
 		return self._get_entity()
 
+  async def async_entity(self):
+		return await self._get_entity()
+
 	def _request(self, method, url, params = None, data = None, headers = None, timeout = 10, responseOkCallback = None, allowRedirects = True, proxies = None):
 		proxies = proxies or self._proxies or {}
 		for attempt in range(self._retries + 1):
 			# The request is newly prepared on each retry because of potential cookie updates.
-			req = self._session.prepare_request(requests.Request(method, url, params = params, data = data, headers = headers))
-			environmentSettings = self._session.merge_environment_settings(req.url, proxies, None, None, None)
+			req = self._client.build_request(method, url, params = params, data = data, headers = headers, timeout = timeout)
 			logger.info(f'Retrieving {req.url}')
 			logger.debug(f'... with headers: {headers!r}')
 			if data:
 				logger.debug(f'... with data: {data!r}')
-			if environmentSettings:
-				logger.debug(f'... with environmentSettings: {environmentSettings!r}')
 			try:
-				r = self._session.send(req, allow_redirects = allowRedirects, timeout = timeout, **environmentSettings)
+				r = self._client.send(req)
 			except requests.exceptions.RequestException as exc:
 				if attempt < self._retries:
 					retrying = ', retrying'
@@ -217,11 +219,72 @@ class Scraper:
 			raise ScraperException(msg)
 		raise RuntimeError('Reached unreachable code')
 
+	async def _async_request(self, method, url, params = None, data = None, headers = None, timeout = 10, responseOkCallback = None, allowRedirects = True, proxies = None):
+		proxies = proxies or self._proxies or {}
+		for attempt in range(self._retries + 1):
+			# The request is newly prepared on each retry because of potential cookie updates.
+			req = self._async_client.build_request(method, url, params = params, data = data, headers = headers, timeout = timeout)
+			logger.info(f'Retrieving {req.url}')
+			logger.debug(f'... with headers: {headers!r}')
+			if data:
+				logger.debug(f'... with data: {data!r}')
+			try:
+				r = await self._async_client.send(req)
+			except requests.exceptions.RequestException as exc:
+				if attempt < self._retries:
+					retrying = ', retrying'
+					level = logging.INFO
+				else:
+					retrying = ''
+					level = logging.ERROR
+				logger.log(level, f'Error retrieving {req.url}: {exc!r}{retrying}')
+			else:
+				redirected = f' (redirected to {r.url})' if r.history else ''
+				logger.info(f'Retrieved {req.url}{redirected}: {r.status_code}')
+				if r.history:
+					for i, redirect in enumerate(r.history):
+						logger.debug(f'... request {i}: {redirect.request.url}: {r.status_code} (Location: {r.headers.get("Location")})')
+				if responseOkCallback is not None:
+					if inspect.iscoroutinefunction(responseOkCallback):
+						success, msg = await responseOkCallback(r)
+					else:
+						success, msg = responseOkCallback(r)
+				else:
+					success, msg = (True, None)
+				msg = f': {msg}' if msg else ''
+
+				if success:
+					logger.debug(f'{req.url} retrieved successfully{msg}')
+					return r
+				else:
+					if attempt < self._retries:
+						retrying = ', retrying'
+						level = logging.INFO
+					else:
+						retrying = ''
+						level = logging.ERROR
+					logger.log(level, f'Error retrieving {req.url}{msg}{retrying}')
+			if attempt < self._retries:
+				sleepTime = 1.0 * 2**attempt # exponential backoff: sleep 1 second after first attempt, 2 after second, 4 after third, etc.
+				logger.info(f'Waiting {sleepTime:.0f} seconds')
+				time.sleep(sleepTime)
+		else:
+			msg = f'{self._retries + 1} requests to {req.url} failed, giving up.'
+			logger.fatal(msg)
+			raise ScraperException(msg)
+		raise RuntimeError('Reached unreachable code')
+
 	def _get(self, *args, **kwargs):
 		return self._request('GET', *args, **kwargs)
 
 	def _post(self, *args, **kwargs):
 		return self._request('POST', *args, **kwargs)
+
+	async def _async_get(self, *args, **kwargs):
+		return await self._async_request('GET', *args, **kwargs)
+
+	async def _async_post(self, *args, **kwargs):
+		return await self._async_request('POST', *args, **kwargs)
 
 	@classmethod
 	def _cli_setup_parser(cls, subparser):
