@@ -5,7 +5,7 @@ import datetime
 import functools
 import json
 import logging
-import requests
+import httpx
 import time
 import warnings
 import inspect
@@ -164,7 +164,7 @@ class Scraper:
 	def entity(self):
 		return self._get_entity()
 
-  async def async_entity(self):
+	async def async_entity(self):
 		return await self._get_entity()
 
 	def _request(self, method, url, params = None, data = None, headers = None, timeout = 10, responseOkCallback = None, allowRedirects = True, proxies = None):
@@ -178,7 +178,7 @@ class Scraper:
 				logger.debug(f'... with data: {data!r}')
 			try:
 				r = self._client.send(req)
-			except requests.exceptions.RequestException as exc:
+			except httpx.RequestError as exc:
 				if attempt < self._retries:
 					retrying = ', retrying'
 					level = logging.INFO
@@ -230,7 +230,7 @@ class Scraper:
 				logger.debug(f'... with data: {data!r}')
 			try:
 				r = await self._async_client.send(req)
-			except requests.exceptions.RequestException as exc:
+			except httpx.RequestError as exc:
 				if attempt < self._retries:
 					retrying = ', retrying'
 					level = logging.INFO
