@@ -181,7 +181,7 @@ class Scraper:
 				logger.debug(f'... with environmentSettings: {environmentSettings!r}')
 			try:
 				r = self._client.send(req)
-			except requests.exceptions.RequestException as exc:
+			except httpx.RequestError as exc:
 				if attempt < self._retries:
 					retrying = ', retrying'
 					level = logging.INFO
