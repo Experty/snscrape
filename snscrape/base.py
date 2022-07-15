@@ -217,8 +217,7 @@ class Scraper:
 			raise ScraperException(msg)
 		raise RuntimeError('Reached unreachable code')
 
-	async def _async_request(self, method, url, params = None, data = None, headers = None, timeout = 10, responseOkCallback = None, allowRedirects = True, proxies = None):
-		proxies = proxies or self._proxies or {}
+	async def _async_request(self, method, url, params = None, data = None, headers = None, timeout = 10, responseOkCallback = None):
 		for attempt in range(self._retries + 1):
 			# The request is newly prepared on each retry because of potential cookie updates.
 			req = self._async_client.build_request(method, url, params = params, data = data, headers = headers, timeout = timeout)
