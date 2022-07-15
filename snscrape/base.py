@@ -142,9 +142,8 @@ class Scraper:
 
 	def __init__(self, *, retries = 3, proxies = None):
 		self._retries = retries
-		self._proxies = proxies
-		self._client = httpx.Client(http2=True, verify=True)
-		self._async_client = httpx.AsyncClient(http2=True, verify=True)
+		self._client = httpx.Client(http2=True, proxies=proxies, verify=True)
+		self._async_client = httpx.AsyncClient(http2=True, proxies=proxies, verify=True)
 
 	@abc.abstractmethod
 	def get_items(self):
@@ -167,8 +166,7 @@ class Scraper:
 	async def async_entity(self):
 		return await self._get_entity()
 
-	def _request(self, method, url, params = None, data = None, headers = None, timeout = 10, responseOkCallback = None, allowRedirects = True, proxies = None):
-		proxies = proxies or self._proxies or {}
+	def _request(self, method, url, params = None, data = None, headers = None, timeout = 10, responseOkCallback = None):
 		for attempt in range(self._retries + 1):
 			# The request is newly prepared on each retry because of potential cookie updates.
 			req = self._client.build_request(method, url, params = params, data = data, headers = headers, timeout = timeout)
