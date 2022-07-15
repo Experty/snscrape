@@ -139,14 +139,9 @@ class Scraper:
 
 	name = None
 
-	def __init__(self, *, retries = 3, proxy=''):
+	def __init__(self, *, retries = 3, proxies = None):
 		self._retries = retries
-		if not proxy:
-			self._client = httpx.Client(http2=True, verify=True)
-		else:
-			proxies = {'http://': f'http://{proxy}',
-					   'https://': f'http://{proxy}'}
-			self._client = httpx.Client(http2=True, proxies=proxies, verify=True)
+		self._client = httpx.Client(http2=True, proxies=proxies, verify=True)
 
 
 	@abc.abstractmethod
@@ -237,7 +232,7 @@ class Scraper:
 		return cls(*args, **kwargs, retries = argparseArgs.retries)
 
 
-def nonempty_string(name):	
+def nonempty_string(name):
 	def f(s):
 		s = s.strip()
 		if s:
