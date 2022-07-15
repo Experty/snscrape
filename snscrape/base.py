@@ -140,8 +140,8 @@ class Scraper:
 	name = None
 
 	def __init__(self, *, retries = 3, proxy=''):
+		self._retries = retries
 		if not proxy:
-			self._retries = retries
 			self._client = httpx.Client(http2=True, verify=True)
 		else:
 			proxies = {'http://': f'http://{proxy}',
