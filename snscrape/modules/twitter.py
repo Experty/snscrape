@@ -664,12 +664,12 @@ class _TwitterAPIScraper(snscrape.base.Scraper):
 				self._guestTokenManager.token = o['guest_token']
 			assert self._guestTokenManager.token
 		_logger.debug(f'Using guest token {self._guestTokenManager.token}')
-		self._session.cookies.set('gt', self._guestTokenManager.token, domain = '.twitter.com', path = '/', secure = True, expires = self._guestTokenManager.setTime + _GUEST_TOKEN_VALIDITY)
+		self._client.cookies.set('gt', self._guestTokenManager.token, domain = '.twitter.com', path = '/')
 		self._apiHeaders['x-guest-token'] = self._guestTokenManager.token
 
 	def _unset_guest_token(self):
 		self._guestTokenManager.reset()
-		del self._session.cookies['gt']
+		del self._client.cookies['gt']
 		del self._apiHeaders['x-guest-token']
 
 	def _check_api_response(self, r):
