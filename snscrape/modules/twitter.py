@@ -552,6 +552,20 @@ class GuestTokenManager:
 		self._token = None
 		self._setTime = 0.0
 
+		cacheHome = os.environ.get('XDG_CACHE_HOME')
+		if not cacheHome or not os.path.isabs(cacheHome):
+			# This should be ${HOME}/.cache, but the HOME environment variable may not exist on non-POSIX-compliant systems.
+			# On POSIX-compliant systems, the XDG Base Directory specification is followed exactly since ~ expands to $HOME if it is present.
+			cacheHome = os.path.join(os.path.expanduser('~'), '.cache')
+		dir = os.path.join(cacheHome, 'snscrape')
+		if not os.path.isdir(dir):
+			# os.makedirs does not apply mode recursively anymore. https://bugs.python.org/issue42367
+			# This ensures that the XDG_CACHE_HOME is created with the right permissions.
+			os.makedirs(os.path.dirname(dir), mode = 0o700, exist_ok = True)
+			os.mkdir(dir, mode = 0o700)
+		self._guestTokenAcquisitionLockFile = os.path.join(dir, 'twitter-guest-token-acquisition.lock')
+		self._guestTokenAcquisitionLock = filelock.FileLock(self._guestTokenAcquisitionLockFile)
+
 	@property
 	def token(self):
 		return self._token
@@ -719,27 +733,28 @@ class _TwitterAPIScraper(snscrape.base.Scraper):
 		return True, None
 
 	def _ensure_guest_token(self, url = None):
-		if self._guestTokenManager.token is None:
-			_logger.info('Retrieving guest token')
-			r = self._get(self._baseUrl if url is None else url, responseOkCallback = self._check_guest_token_response)
-			if (match := re.search(r'document\.cookie = decodeURIComponent\("gt=(\d+); Max-Age=10800; Domain=\.twitter\.com; Path=/; Secure"\);', r.text)):
-				_logger.debug('Found guest token in HTML')
-				self._guestTokenManager.token = match.group(1)
-			if 'gt' in r.cookies:
-				_logger.debug('Found guest token in cookies')
-				self._guestTokenManager.token = r.cookies['gt']
-			if not self._guestTokenManager.token:
-				_logger.debug('No guest token in response')
-				_logger.info('Retrieving guest token via API')
-				r = self._post('https://api.twitter.com/1.1/guest/activate.json', data = b'', headers = self._apiHeaders, responseOkCallback = self._check_guest_token_response)
-				o = r.json()
-				if not o.get('guest_token'):
-					raise snscrape.base.ScraperException('Unable to retrieve guest token')
-				self._guestTokenManager.token = o['guest_token']
-			assert self._guestTokenManager.token
-		_logger.debug(f'Using guest token {self._guestTokenManager.token}')
-		self._session.cookies.set('gt', self._guestTokenManager.token, domain = '.twitter.com', path = '/', secure = True, expires = self._guestTokenManager.setTime + _GUEST_TOKEN_VALIDITY)
-		self._apiHeaders['x-guest-token'] = self._guestTokenManager.token
+		with self._guestTokenManager._guestTokenAcquisitionLock:
+			if self._guestTokenManager.token is None:
+				_logger.info('Retrieving guest token')
+				r = self._get(self._baseUrl if url is None else url, responseOkCallback = self._check_guest_token_response)
+				if (match := re.search(r'document\.cookie = decodeURIComponent\("gt=(\d+); Max-Age=10800; Domain=\.twitter\.com; Path=/; Secure"\);', r.text)):
+					_logger.debug('Found guest token in HTML')
+					self._guestTokenManager.token = match.group(1)
+				if 'gt' in r.cookies:
+					_logger.debug('Found guest token in cookies')
+					self._guestTokenManager.token = r.cookies['gt']
+				if not self._guestTokenManager.token:
+					_logger.debug('No guest token in response')
+					_logger.info('Retrieving guest token via API')
+					r = self._post('https://api.twitter.com/1.1/guest/activate.json', data = b'', headers = self._apiHeaders, responseOkCallback = self._check_guest_token_response)
+					o = r.json()
+					if not o.get('guest_token'):
+						raise snscrape.base.ScraperException('Unable to retrieve guest token')
+					self._guestTokenManager.token = o['guest_token']
+				assert self._guestTokenManager.token
+			_logger.debug(f'Using guest token {self._guestTokenManager.token}')
+			self._session.cookies.set('gt', self._guestTokenManager.token, domain = '.twitter.com', path = '/', secure = True, expires = self._guestTokenManager.setTime + _GUEST_TOKEN_VALIDITY)
+			self._apiHeaders['x-guest-token'] = self._guestTokenManager.token
 
 	def _unset_guest_token(self, blockUntil):
 		self._guestTokenManager.reset(blockUntil = blockUntil)
@@ -1877,6 +1892,9 @@ class TwitterProfileScraper(TwitterUserScraper):
 
 		gotPinned = False
 		for obj in self._iter_api_data('https://twitter.com/i/api/graphql/fn9oRltM1N4thkh5CVusPg/UserTweetsAndReplies', _TwitterAPIType.GRAPHQL, params, paginationParams, instructionsPath = ['data', 'user', 'result', 'timeline_v2', 'timeline', 'instructions']):
+			if not obj['data'] or 'result' not in obj['data']['user']:
+				_logger.warning('Empty response')
+				break
 			if obj['data']['user']['result']['__typename'] == 'UserUnavailable':
 				_logger.warning('User unavailable')
 				break
