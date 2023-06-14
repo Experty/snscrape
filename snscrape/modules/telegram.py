@@ -7,6 +7,7 @@ import datetime
 import logging
 import re
 import snscrape.base
+import snscrape.utils
 import typing
 import urllib.parse
 
@@ -152,7 +153,7 @@ class TelegramChannelScraper(snscrape.base.Scraper):
 		soup = bs4.BeautifulSoup(r.text, 'lxml')
 		membersDiv = soup.find('div', class_ = 'tgme_page_extra')
 		if membersDiv.text.endswith(' subscribers'):
-			kwargs['members'] = int(membersDiv.text[:-8].replace(' ', ''))
+			kwargs['members'] = int(membersDiv.text[:-12].replace(' ', ''))
 		kwargs['photo'] = soup.find('img', class_ = 'tgme_page_photo_image').attrs['src']
 
 		r, soup = self._initial_page()
@@ -196,7 +197,7 @@ class TelegramChannelScraper(snscrape.base.Scraper):
 
 	@classmethod
 	def _cli_setup_parser(cls, subparser):
-		subparser.add_argument('channel', type = snscrape.base.nonempty_string('channel'), help = 'A channel name')
+		subparser.add_argument('channel', type = snscrape.utils.nonempty_string_arg('channel'), help = 'A channel name')
 
 	@classmethod
 	def _cli_from_args(cls, args):
